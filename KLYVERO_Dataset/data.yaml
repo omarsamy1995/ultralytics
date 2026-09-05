@@ -1,5 +1,5 @@
 # المسار الرئيسي لمجموعة البيانات
-path: D:\Upgrade model Yolo11n-pose\ultralytics\KLYVERO_Dataset
+path: D:\KLYVERO_Advanced_YOLO\ultralytics\KLYVERO_Dataset
 
 # مسارات الصور بالنسبة للمسار الرئيسي
 train: train/images
