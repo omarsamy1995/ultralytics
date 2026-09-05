@@ -76,6 +76,7 @@ from ultralytics.nn.modules import (
     YOLOESegment,
     YOLOESegment26,
     v10Detect,
+    CBAM,
 )
 from ultralytics.utils import (
     DEFAULT_CFG_DICT,
@@ -2009,6 +2010,7 @@ def parse_model(d, ch, verbose=True):
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
     base_modules = frozenset(
         {
+            CBAM,
             Classify,
             Conv,
             ConvTranspose,
