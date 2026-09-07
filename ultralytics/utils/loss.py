@@ -654,10 +654,10 @@ class v8SegmentationLoss(v8DetectionLoss):
 class v8PoseLoss(v8DetectionLoss):
     """Criterion class for computing training losses for YOLOv8 pose estimation."""
 
-    def __init__(self, model: torch.nn.Module, tal_topk: int = 10, tal_topk2: int = 10):  # model must be de-paralleled
-        """Initialize v8PoseLoss with model parameters and keypoint-specific loss functions."""
+    def __init__(self, model: torch.nn.Module, tal_topk: int = 10, tal_topk2: int = 10):
         super().__init__(model, tal_topk, tal_topk2)
-        self.loss_names = ("box_loss", "pose_loss", "kobj_loss", *self.loss_names[1:])
+        # إضافة اسم الخسارة الجديدة للقائمة التي يتم تسجيلها
+        self.loss_names = ("box_loss", "pose_loss", "kobj_loss", "temporal_loss", *self.loss_names[1:])
         self.kpt_shape = model.model[-1].kpt_shape
         self.bce_pose = nn.BCEWithLogitsLoss()
         is_pose = self.kpt_shape == [17, 3]
@@ -674,24 +674,46 @@ class v8PoseLoss(v8DetectionLoss):
                 raise ValueError(f"'kpt_oks_sigmas' must be {nkpt} positive values, got {sigmas.tolist()}")
 
         self.keypoint_loss = KeypointLoss(sigmas=sigmas)
+        
+        # متغير لتخزين مفاصل الإطار السابق لحساب الخسارة الزمنية
+        self.previous_pred_kpts = None
+
+    def calculate_temporal_loss(self, current_kpts: torch.Tensor) -> torch.Tensor:
+        """Calculate Temporal Consistency Loss between current and previous frames."""
+        if self.previous_pred_kpts is None or self.previous_pred_kpts.shape != current_kpts.shape:
+            self.previous_pred_kpts = current_kpts.detach().clone()
+            return torch.tensor(0.0, device=self.device)
+
+        # حساب الفرق الإقليدي بين إحداثيات المفاصل في الإطار الحالي والسابق
+        # current_kpts shape: (BS, N_anchors, K, 3) or similar
+        diff = torch.abs(current_kpts[..., :2] - self.previous_pred_kpts[..., :2])
+        
+        # معاقبة الحركة المفاجئة التي تتجاوز العتبة الفيزيائية الطبيعية
+        threshold = 5.0  # عتبة التغير بالبيكسل
+        temporal_penalty = F.relu(diff - threshold).mean()
+
+        # تحديث الإطار السابق للإطار القادم
+        self.previous_pred_kpts = current_kpts.detach().clone()
+        
+        return temporal_penalty
 
     def loss(
         self, preds: dict[str, torch.Tensor], batch: dict[str, torch.Tensor]
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        """Calculate the total loss and detach it for pose estimation."""
+        """Calculate the total loss and detach it for pose estimation including Temporal Consistency."""
         pred_kpts = preds["kpts"].permute(0, 2, 1).contiguous()
-        loss = torch.zeros(5, device=self.device)  # box, kpt_location, kpt_visibility, cls, dfl
+        loss = torch.zeros(6, device=self.device)  # زيادة الحجم لتشمل box, pose, kobj, temporal, cls, dfl
+        
         (fg_mask, target_gt_idx, target_bboxes, anchor_points, stride_tensor), det_loss, _ = (
             self.get_assigned_targets_and_loss(preds, batch)
         )
-        # NOTE: re-assign index for consistency for now. Need to be removed in the future.
-        loss[0], loss[3], loss[4] = det_loss[0], det_loss[1], det_loss[2]
+        
+        loss[0], loss[4], loss[5] = det_loss[0], det_loss[1], det_loss[2]
 
         batch_size = pred_kpts.shape[0]
         imgsz = torch.tensor(preds["feats"][0].shape[2:], device=self.device, dtype=pred_kpts.dtype) * self.stride[0]
 
-        # Pboxes
-        pred_kpts = self.kpts_decode(anchor_points, pred_kpts.view(batch_size, -1, *self.kpt_shape))  # (b, h*w, 17, 3)
+        pred_kpts = self.kpts_decode(anchor_points, pred_kpts.view(batch_size, -1, *self.kpt_shape))  
 
         # Keypoint loss
         if fg_mask.sum():
@@ -708,15 +730,20 @@ class v8PoseLoss(v8DetectionLoss):
                 target_bboxes,
                 pred_kpts,
             )
-        # WARNING: line below prevents Multi-GPU DDP 'unused gradient' PyTorch errors, do not remove
+            
+            # --- دمج خسارة التوافق الزمني هنا ---
+            loss[3] = self.calculate_temporal_loss(pred_kpts)
+            
         else:
             loss[1] += pred_kpts[..., :0].sum()
+            loss[3] += pred_kpts[..., :0].sum()
 
         loss[1] *= self.hyp.pose  # pose gain
         loss[2] *= self.hyp.kobj  # kobj gain
+        loss[3] *= 1.0            # temporal gain (معدل الخسارة الزمنية)
 
-        return loss * batch_size, dict(zip(self.loss_names, loss.detach()))  # loss(box, pose, kobj, cls, dfl)
-
+        return loss * batch_size, dict(zip(self.loss_names, loss.detach()))
+        
     @staticmethod
     def kpts_decode(anchor_points: torch.Tensor, pred_kpts: torch.Tensor) -> torch.Tensor:
         """Decode predicted keypoints to image coordinates."""

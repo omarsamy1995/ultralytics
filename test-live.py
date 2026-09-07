@@ -1,62 +1,55 @@
 import cv2
+import numpy as np
 from ultralytics import YOLO
 
-# تحميل أوزان KLYVERO
-model = YOLO(r'D:\KLYVERO_Advanced_YOLO\ultralytics\runs\pose\KLYVERO_Engine\yolo11n_body_12kpt-2\weights\best.pt')
+# 1. تحميل موديل الـ CBAM الممتاز الخاص بك
+model = YOLO('/teamspace/studios/this_studio/ultralytics/runs/pose/KLYVERO_Engine/yolo11n_body_12kpt-2/weights/best.pt')
 
+# 2. إعدادات فلتر التنعيم الزمني (Temporal Smoother)
+# ألفا (Alpha) تتحكم في قوة التنعيم:
+# 0.1 = تنعيم قوي جداً (حركة بطيئة وثابتة جداً)
+# 0.9 = تنعيم ضعيف (استجابة سريعة جداً للحركة ولكن اهتزاز أعلى)
+# 0.5 تعتبر نقطة توازن جيدة للـ Virtual Try-On
+ALPHA = 0.5  
+previous_keypoints = None
+
+# فتح الكاميرا
 cap = cv2.VideoCapture(0)
 
 while cap.isOpened():
     success, frame = cap.read()
     if not success:
-        print("تعذر الوصول للكاميرا.")
         break
 
-    # حساب مساحة الإطار الإجمالية لفلتر الحجم
-    frame_height, frame_width = frame.shape[:2]
-    frame_area = frame_width * frame_height
-
-    # تمرير الإطار للموديل مع فلتر الثقة الصارم (85%)
-    # verbose=False لمنع طباعة التفاصيل في الـ Terminal وتخفيف الضغط
-    results = model(frame, conf=0.80, verbose=False)
+    # إجراء التوقع
+    results = model(frame, verbose=False)
     
-    # أخذ نسخة من الإطار للرسم عليها
-    annotated_frame = frame.copy()
-
-    for result in results:
-        boxes = result.boxes
-        keypoints = result.keypoints
-
-        for i in range(len(boxes)):
-            # استخراج أبعاد الصندوق
-            x1, y1, x2, y2 = boxes.xyxy[i].tolist()
-            width = x2 - x1
-            height = y2 - y1
-
-            # 1. فلتر النسبة: تجاهل الكائنات العريضة (أكبر من طولها)
-            if width > height:
-                continue
-                
-            # 2. فلتر المساحة: الكائن يجب أن يشغل 15% على الأقل من الشاشة
-            if (width * height) < (frame_area * 0.15):
-                continue
-
-            # رسم الصندوق المحيط باللون الأخضر للكائنات الصحيحة فقط
-            cv2.rectangle(annotated_frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+    for r in results:
+        # التأكد من وجود مفاصل تم التعرف عليها
+        if r.keypoints is not None and len(r.keypoints.xy) > 0:
+            # استخراج مصفوفة النقاط للإطار الحالي
+            current_keypoints = r.keypoints.xy[0].cpu().numpy()
             
-            # استخراج ورسم النقاط الـ 12 باللون الأحمر
-            if keypoints is not None:
-                # استخدام xy للحصول على الإحداثيات بالبيكسل الفعلي (وليس نسب مئوية)
-                kpts = keypoints.xy[i].tolist() 
-                
-                for kx, ky in kpts:
-                    # التأكد من أن النقطة ظاهرة داخل الإطار
-                    if kx > 0 and ky > 0: 
-                        cv2.circle(annotated_frame, (int(kx), int(ky)), 5, (0, 0, 255), -1)
+            # تطبيق فلتر الـ EMA إذا كان هناك نقاط سابقة
+            if previous_keypoints is not None and current_keypoints.shape == previous_keypoints.shape:
+                # المعادلة الرياضية للتنعيم: (الجديد * ألفا) + (القديم * (1 - ألفا))
+                smoothed_keypoints = (current_keypoints * ALPHA) + (previous_keypoints * (1.0 - ALPHA))
+            else:
+                # إذا كانت هذه أول لقطة، لا تنعيم
+                smoothed_keypoints = current_keypoints
+            
+            # حفظ النقاط المنعمة لتصبح "النقاط السابقة" في الإطار القادم
+            previous_keypoints = smoothed_keypoints
+            
+            # --- رسم النقاط المنعمة يدوياً على الشاشة ---
+            for kp in smoothed_keypoints:
+                x, y = int(kp[0]), int(kp[1])
+                if x > 0 and y > 0:  # رسم النقاط الظاهرة فقط
+                    cv2.circle(frame, (x, y), 5, (0, 255, 0), -1)
 
-    cv2.imshow("KLYVERO Live Tracking", annotated_frame)
-
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    cv2.imshow("KLYVERO - Temporal Smoothed Try-On", frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
 cap.release()
