@@ -13,9 +13,8 @@ kpt_shape: [12, 3]
 flip_idx: [1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10]
 
 # تعريف الفئات
-nc: 1
-names:
-  0: person
+nc: 4
+names: ['front', 'back', 'side', 'full']
 
 # أسماء المفاصل الـ 12 بالترتيب التشريحي الجديد
 kpt_names:

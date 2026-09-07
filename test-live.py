@@ -2,7 +2,7 @@ import cv2
 from ultralytics import YOLO
 
 # تحميل أوزان KLYVERO
-model = YOLO(r'D:\KLYVERO_Advanced_YOLO\ultralytics\best.pt')
+model = YOLO(r'D:\KLYVERO_Advanced_YOLO\ultralytics\runs\pose\KLYVERO_Engine\yolo11n_body_12kpt-2\weights\best.pt')
 
 cap = cv2.VideoCapture(0)
 
