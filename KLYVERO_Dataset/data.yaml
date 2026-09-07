@@ -1,5 +1,5 @@
 # المسار الرئيسي لمجموعة البيانات
-path: D:\KLYVERO_Advanced_YOLO\ultralytics\KLYVERO_Dataset
+path: /teamspace/studios/this_studio/ultralytics/KLYVERO_Dataset
 
 # مسارات الصور بالنسبة للمسار الرئيسي
 train: train/images
@@ -13,8 +13,10 @@ kpt_shape: [12, 3]
 flip_idx: [1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10]
 
 # تعريف الفئات
-nc: 4
-names: ['front', 'back', 'side', 'full']
+nc: 1
+nc: 1
+names:
+  0: person
 
 # أسماء المفاصل الـ 12 بالترتيب التشريحي الجديد
 kpt_names:
