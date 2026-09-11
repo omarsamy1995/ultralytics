@@ -1,5 +1,5 @@
 # المسار الرئيسي لمجموعة البيانات
-path: /teamspace/studios/this_studio/ultralytics/KLYVERO_Dataset
+path: /content/ultralytics/KLYVERO_Dataset
 
 # مسارات الصور بالنسبة للمسار الرئيسي
 train: train/images
