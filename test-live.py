@@ -3,7 +3,7 @@ import numpy as np
 from ultralytics import YOLO
 
 # 1. تحميل موديل الـ CBAM الممتاز الخاص بك
-model = YOLO('/teamspace/studios/this_studio/ultralytics/runs/pose/KLYVERO_Engine/yolo11n_body_12kpt-2/weights/best.pt')
+model = YOLO(r'D:\KLYVERO_Advanced_YOLO\ultralytics\runs\pose\KLYVERO_Engine\yolo11n_CBAM_Temporal_Loss-8\weights\best.pt')
 
 # 2. إعدادات فلتر التنعيم الزمني (Temporal Smoother)
 # ألفا (Alpha) تتحكم في قوة التنعيم:
